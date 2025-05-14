@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,14 +7,10 @@ import { challenges, Challenge } from "@/lib/data";
 import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 
-interface ChallengeWithStatus extends Challenge {
-  status: "Not Started" | "Started" | "Submitted";
-}
-
 const Dashboard = () => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [challengesWithStatus, setChallengesWithStatus] = useState<ChallengeWithStatus[]>([]);
+  const [challengesWithStatus, setChallengesWithStatus] = useState<Challenge[]>([]);
   const [isLoadingChallenges, setIsLoadingChallenges] = useState(true);
 
   // Redirect if not authenticated
@@ -53,7 +48,7 @@ const Dashboard = () => {
         const updatedChallenges = challenges.map(challenge => ({
           ...challenge,
           status: statusMap.get(challenge.id) || "Not Started"
-        })) as ChallengeWithStatus[];
+        }));
 
         setChallengesWithStatus(updatedChallenges);
       } catch (error) {
@@ -81,7 +76,7 @@ const Dashboard = () => {
     }
   };
 
-  const getStatusBadge = (status: ChallengeWithStatus["status"]) => {
+  const getStatusBadge = (status: Challenge["status"]) => {
     switch (status) {
       case "Not Started":
         return <Badge variant="outline" className="status-badge status-not-started">Not Started</Badge>;

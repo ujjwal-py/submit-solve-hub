@@ -4,7 +4,7 @@ export type Challenge = {
   title: string;
   description: string;
   difficulty: "Easy" | "Medium" | "Hard";
-  status: "Not Started" | "Submitted";
+  status: "Not Started" | "Started" | "Submitted";
   imageUrl: string;
 };
 
