@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -40,9 +41,11 @@ const Dashboard = () => {
 
         // Create a map of challenge_id to status
         const statusMap = new Map();
-        data.forEach(item => {
-          statusMap.set(item.challenge_id, item.status);
-        });
+        if (data) {
+          data.forEach(item => {
+            statusMap.set(item.challenge_id, item.status);
+          });
+        }
 
         // Merge challenge data with status
         const updatedChallenges = challenges.map(challenge => ({
@@ -60,6 +63,10 @@ const Dashboard = () => {
 
     if (user) {
       fetchChallengeStatuses();
+    } else {
+      // If no user, just show challenges with default status
+      setChallengesWithStatus(challenges);
+      setIsLoadingChallenges(false);
     }
   }, [user]);
 
@@ -89,7 +96,7 @@ const Dashboard = () => {
     }
   };
 
-  if (isLoading || !user) {
+  if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
