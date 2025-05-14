@@ -9,6 +9,7 @@ import { challenges, programmingLanguages } from "@/lib/data";
 import { useToast } from "@/components/ui/use-toast";
 import { Navbar } from "@/components/Navbar";
 import Editor from "@monaco-editor/react";
+import { supabase } from "@/integrations/supabase/client";
 
 const ChallengePage = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +24,8 @@ const ChallengePage = () => {
   const [code, setCode] = useState(programmingLanguages[0].defaultCode);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [challengeStatus, setChallengeStatus] = useState<string>("Not Started");
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -38,6 +41,77 @@ const ChallengePage = () => {
     }
   }, [challenge, isLoading, navigate]);
 
+  // Fetch challenge status from Supabase or create a new status
+  useEffect(() => {
+    const fetchChallengeStatus = async () => {
+      if (!user || !id) return;
+
+      setIsLoadingStatus(true);
+      try {
+        // Try to get existing status
+        const { data, error } = await supabase
+          .from("challenge_status")
+          .select("status")
+          .eq("user_id", user.id)
+          .eq("challenge_id", id)
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Error fetching challenge status:", error);
+          return;
+        }
+
+        if (data) {
+          // Status exists
+          setChallengeStatus(data.status);
+          setIsSubmitted(data.status === "Submitted");
+          
+          // Update challenge object with status
+          if (challenge) {
+            setChallenge({
+              ...challenge,
+              status: data.status as any
+            });
+          }
+        } else {
+          // Status doesn't exist, create a new one with "Started" status
+          if (user && id) {
+            const { error: insertError } = await supabase
+              .from("challenge_status")
+              .insert({
+                user_id: user.id,
+                challenge_id: id,
+                status: "Started"
+              });
+
+            if (insertError) {
+              console.error("Error inserting challenge status:", insertError);
+              return;
+            }
+
+            setChallengeStatus("Started");
+            
+            // Update challenge object with status
+            if (challenge) {
+              setChallenge({
+                ...challenge,
+                status: "Started" as any
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error in fetchChallengeStatus:", error);
+      } finally {
+        setIsLoadingStatus(false);
+      }
+    };
+
+    if (user && id) {
+      fetchChallengeStatus();
+    }
+  }, [user, id, challenge]);
+
   const handleLanguageChange = (value: string) => {
     const selectedLanguage = programmingLanguages.find((lang) => lang.value === value);
     if (selectedLanguage) {
@@ -46,29 +120,50 @@ const ChallengePage = () => {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!user || !id) return;
+    
     setIsSubmitting(true);
     
-    // Simulate API call to submit code
-    setTimeout(() => {
-      // Update challenge status
+    try {
+      // Save submission to Supabase
+      const { error: submissionError } = await supabase
+        .from("submissions")
+        .insert({
+          user_id: user.id,
+          challenge_id: id,
+          language: language.value,
+          code
+        });
+
+      if (submissionError) {
+        console.error("Error saving submission:", submissionError);
+        toast({
+          title: "Error",
+          description: "Failed to submit solution. Please try again.",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Update challenge status to Submitted
+      const { error: statusError } = await supabase
+        .from("challenge_status")
+        .update({ status: "Submitted", updated_at: new Date().toISOString() })
+        .eq("user_id", user.id)
+        .eq("challenge_id", id);
+
+      if (statusError) {
+        console.error("Error updating challenge status:", statusError);
+      }
+
+      // Update local state
+      setChallengeStatus("Submitted");
+      
       if (challenge) {
         const updatedChallenge = { ...challenge, status: "Submitted" as const };
         setChallenge(updatedChallenge);
-        
-        // Update challenges list
-        const updatedChallenges = challenges.map((c) =>
-          c.id === id ? updatedChallenge : c
-        );
-        
-        // In a real app, we would persist this to a database
-        console.log("Submitted solution:", {
-          userId: user?.id,
-          challengeId: id,
-          language: language.value,
-          code,
-          submittedAt: new Date().toISOString(),
-        });
       }
       
       setIsSubmitting(false);
@@ -78,7 +173,15 @@ const ChallengePage = () => {
         title: "Solution submitted",
         description: "Your solution has been successfully submitted for review.",
       });
-    }, 1500);
+    } catch (error) {
+      console.error("Error in handleSubmit:", error);
+      setIsSubmitting(false);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   if (isLoading || !user || !challenge) {
@@ -116,12 +219,14 @@ const ChallengePage = () => {
               Status:{" "}
               <span
                 className={
-                  challenge.status === "Submitted"
+                  challengeStatus === "Submitted"
                     ? "text-green-500"
+                    : challengeStatus === "Started"
+                    ? "text-blue-500"
                     : "text-gray-500"
                 }
               >
-                {challenge.status}
+                {isLoadingStatus ? "Loading..." : challengeStatus}
               </span>
             </span>
           </div>
@@ -175,7 +280,7 @@ const ChallengePage = () => {
             </div>
             <div className="code-editor-container">
               <Editor
-                height="100%"
+                height="500px"
                 language={language.value}
                 theme="vs-dark"
                 value={code}

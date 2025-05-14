@@ -6,30 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Navbar } from "@/components/Navbar";
 import Editor from "@monaco-editor/react";
+import { supabase } from "@/integrations/supabase/client";
+import { challenges } from "@/lib/data";
 
-// Mock submissions data
-const mockSubmissions = [
-  {
-    id: "1",
-    userId: "1",
-    username: "user",
-    challengeId: "1",
-    challengeTitle: "Two Sum",
-    language: "javascript",
-    submittedAt: "2023-07-10T10:30:00Z",
-    code: "function twoSum(nums, target) {\n  const map = new Map();\n  \n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    \n    if (map.has(complement)) {\n      return [map.get(complement), i];\n    }\n    \n    map.set(nums[i], i);\n  }\n  \n  return [];\n}"
-  },
-  {
-    id: "2",
-    userId: "1",
-    username: "user",
-    challengeId: "2",
-    challengeTitle: "Valid Parentheses",
-    language: "python",
-    submittedAt: "2023-07-11T14:45:00Z",
-    code: "def is_valid(s):\n    stack = []\n    mapping = {')': '(', '}': '{', ']': '['}\n    \n    for char in s:\n        if char in mapping:\n            top_element = stack.pop() if stack else '#'\n            if mapping[char] != top_element:\n                return False\n        else:\n            stack.append(char)\n    \n    return not stack"
-  }
-];
+interface Submission {
+  id: string;
+  user_id: string;
+  challenge_id: string;
+  challengeTitle: string;
+  language: string;
+  submittedAt: string;
+  code: string;
+}
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
@@ -49,9 +37,8 @@ const SubmissionDetailPage = () => {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
   
-  const [submission, setSubmission] = useState(
-    mockSubmissions.find((s) => s.id === id) || null
-  );
+  const [submission, setSubmission] = useState<Submission | null>(null);
+  const [isLoadingSubmission, setIsLoadingSubmission] = useState(true);
 
   // Redirect if not admin
   useEffect(() => {
@@ -60,15 +47,65 @@ const SubmissionDetailPage = () => {
     }
   }, [user, isLoading, navigate]);
 
+  // Fetch submission details from Supabase
+  useEffect(() => {
+    const fetchSubmissionDetails = async () => {
+      if (!id || !user?.isAdmin) return;
+
+      setIsLoadingSubmission(true);
+      try {
+        const { data, error } = await supabase
+          .from("submissions")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (error) {
+          console.error("Error fetching submission:", error);
+          navigate("/admin");
+          return;
+        }
+
+        if (data) {
+          const challenge = challenges.find(c => c.id === data.challenge_id);
+          setSubmission({
+            id: data.id,
+            user_id: data.user_id,
+            challenge_id: data.challenge_id,
+            challengeTitle: challenge ? challenge.title : `Challenge ${data.challenge_id}`,
+            language: data.language,
+            submittedAt: data.submitted_at,
+            code: data.code
+          });
+        } else {
+          navigate("/admin");
+        }
+      } catch (error) {
+        console.error("Error in fetchSubmissionDetails:", error);
+        navigate("/admin");
+      } finally {
+        setIsLoadingSubmission(false);
+      }
+    };
+
+    if (user?.isAdmin && id) {
+      fetchSubmissionDetails();
+    }
+  }, [id, user, navigate]);
+
   // Redirect if submission doesn't exist
   useEffect(() => {
-    if (!submission && !isLoading) {
+    if (!isLoadingSubmission && !submission && !isLoading) {
       navigate("/admin");
     }
-  }, [submission, isLoading, navigate]);
+  }, [submission, isLoadingSubmission, isLoading, navigate]);
 
-  if (isLoading || !user || !user.isAdmin || !submission) {
+  if (isLoading || !user || !user.isAdmin || isLoadingSubmission) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
+
+  if (!submission) {
+    return <div className="flex items-center justify-center h-screen">Submission not found</div>;
   }
 
   return (
@@ -97,8 +134,8 @@ const SubmissionDetailPage = () => {
                   <p className="font-medium">{submission.challengeTitle}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">User</p>
-                  <p className="font-medium">{submission.username}</p>
+                  <p className="text-sm text-muted-foreground">User ID</p>
+                  <p className="font-medium font-mono text-xs">{submission.user_id}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Language</p>

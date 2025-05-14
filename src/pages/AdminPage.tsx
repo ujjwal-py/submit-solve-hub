@@ -1,35 +1,22 @@
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Navbar } from "@/components/Navbar";
-import { challenges } from "@/lib/data";
+import { supabase } from "@/integrations/supabase/client";
 
-// Mock submissions data
-const mockSubmissions = [
-  {
-    id: "1",
-    userId: "1",
-    username: "user",
-    challengeId: "1",
-    challengeTitle: "Two Sum",
-    language: "javascript",
-    submittedAt: "2023-07-10T10:30:00Z",
-    code: "function twoSum(nums, target) {\n  const map = new Map();\n  \n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    \n    if (map.has(complement)) {\n      return [map.get(complement), i];\n    }\n    \n    map.set(nums[i], i);\n  }\n  \n  return [];\n}"
-  },
-  {
-    id: "2",
-    userId: "1",
-    username: "user",
-    challengeId: "2",
-    challengeTitle: "Valid Parentheses",
-    language: "python",
-    submittedAt: "2023-07-11T14:45:00Z",
-    code: "def is_valid(s):\n    stack = []\n    mapping = {')': '(', '}': '{', ']': '['}\n    \n    for char in s:\n        if char in mapping:\n            top_element = stack.pop() if stack else '#'\n            if mapping[char] != top_element:\n                return False\n        else:\n            stack.append(char)\n    \n    return not stack"
-  }
-];
+interface Submission {
+  id: string;
+  user_id: string;
+  username?: string;
+  challengeId: string;
+  challengeTitle: string;
+  language: string;
+  submittedAt: string;
+  code: string;
+}
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
@@ -45,6 +32,8 @@ const formatDate = (dateString: string) => {
 const AdminPage = () => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
 
   // Redirect if not admin
   useEffect(() => {
@@ -52,6 +41,59 @@ const AdminPage = () => {
       navigate("/dashboard");
     }
   }, [user, isLoading, navigate]);
+  
+  // Fetch submissions from Supabase
+  useEffect(() => {
+    const fetchSubmissions = async () => {
+      if (!user?.isAdmin) return;
+      
+      setIsLoadingSubmissions(true);
+      try {
+        // Get all submissions
+        const { data, error } = await supabase
+          .from("submissions")
+          .select(`
+            id,
+            user_id,
+            challenge_id,
+            language,
+            code,
+            submitted_at
+          `)
+          .order('submitted_at', { ascending: false });
+        
+        if (error) {
+          console.error("Error fetching submissions:", error);
+          return;
+        }
+        
+        // Process submissions and add challenge titles
+        const processedSubmissions = data.map(submission => {
+          const challenge = challenges.find(c => c.id === submission.challenge_id);
+          return {
+            id: submission.id,
+            user_id: submission.user_id,
+            username: submission.user_id.slice(0, 8), // Using part of the UUID as a temp username
+            challengeId: submission.challenge_id,
+            challengeTitle: challenge ? challenge.title : `Challenge ${submission.challenge_id}`,
+            language: submission.language,
+            submittedAt: submission.submitted_at,
+            code: submission.code
+          };
+        });
+        
+        setSubmissions(processedSubmissions);
+      } catch (error) {
+        console.error("Error in fetchSubmissions:", error);
+      } finally {
+        setIsLoadingSubmissions(false);
+      }
+    };
+    
+    if (user?.isAdmin) {
+      fetchSubmissions();
+    }
+  }, [user]);
 
   if (isLoading || !user || !user.isAdmin) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -73,11 +115,15 @@ const AdminPage = () => {
             <CardTitle>Recent Submissions</CardTitle>
           </CardHeader>
           <CardContent>
-            {mockSubmissions.length > 0 ? (
+            {isLoadingSubmissions ? (
+              <div className="text-center py-8">
+                <p>Loading submissions...</p>
+              </div>
+            ) : submissions.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
+                    <TableHead>User ID</TableHead>
                     <TableHead>Challenge</TableHead>
                     <TableHead>Language</TableHead>
                     <TableHead>Submitted</TableHead>
@@ -85,9 +131,9 @@ const AdminPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockSubmissions.map((submission) => (
+                  {submissions.map((submission) => (
                     <TableRow key={submission.id}>
-                      <TableCell>{submission.username}</TableCell>
+                      <TableCell className="font-mono text-xs">{submission.user_id}</TableCell>
                       <TableCell>{submission.challengeTitle}</TableCell>
                       <TableCell className="capitalize">{submission.language}</TableCell>
                       <TableCell>{formatDate(submission.submittedAt)}</TableCell>
